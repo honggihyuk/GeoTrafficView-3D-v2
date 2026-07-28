@@ -32,6 +32,8 @@ const setStatus = (t) => (statusEl.textContent = t);
 
 // HD맵 스냅: 정밀도로지도 정점을 로드해 GCP 지도클릭을 cm급 실좌표로 스냅
 let hdVerts = [], hdLoaded = false, snapOn = false;
+// HD맵 GCP 후보(tools/gcp_candidates.py 산출물) — 번호순으로 안내한다
+let cands = [], candIdx = 0, candOn = false;
 async function loadHdmap() {
   if (hdLoaded) return;
   hdLoaded = true;
@@ -43,6 +45,9 @@ async function loadHdmap() {
     const g = f.geometry;
     if (g.type === 'LineString') g.coordinates.forEach((c) => hdVerts.push(c));
     else if (g.type === 'Point') hdVerts.push(g.coordinates);
+    // B3_SURFACEMARK(횡단보도·화살표)는 Polygon이다. 횡단보도 모서리는 영상에서도
+    // 또렷해 GCP 스냅 대상으로 최상급이라 정점을 함께 싣는다.
+    else if (g.type === 'Polygon') g.coordinates.forEach((r) => r.forEach((c) => hdVerts.push(c)));
   }
   setStatus(`HD맵 스냅 로드(${hdVerts.length} 정점) · GCP 지도클릭이 정밀도로지도로 스냅됩니다`);
   // 지도 표시는 best-effort(스타일 로드 후)
@@ -52,6 +57,8 @@ async function loadHdmap() {
         map.addSource('hdmap', { type: 'geojson', data: fc });
         map.addLayer({ id: 'hdmap-line', type: 'line', source: 'hdmap',
           filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-color': '#22d3ee', 'line-width': 1.5 } });
+        map.addLayer({ id: 'hdmap-poly', type: 'line', source: 'hdmap',
+          filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'line-color': '#a3e635', 'line-width': 1 } });
         map.addLayer({ id: 'hdmap-pt', type: 'circle', source: 'hdmap',
           filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 3, 'circle-color': '#f59e0b' } });
       }
@@ -69,10 +76,16 @@ function nearestVert(ll) {
   }
   return Math.sqrt(bd) < 15 ? best : null;   // 15m 이내면 스냅
 }
+document.getElementById('hdcand').addEventListener('change', (e) => {
+  candOn = e.target.checked;
+  if (candOn && !cands.length) setStatus('이 카메라의 GCP 후보가 없습니다 — python tools/gcp_candidates.py --loc <코드>');
+  redraw(); updateCounts();
+});
+
 document.getElementById('hdsnap').addEventListener('change', (e) => {
   snapOn = e.target.checked;
   if (snapOn) loadHdmap();
-  ['hdmap-line', 'hdmap-pt'].forEach((id) => map.getLayer && map.getLayer(id) &&
+  ['hdmap-line', 'hdmap-poly', 'hdmap-pt'].forEach((id) => map.getLayer && map.getLayer(id) &&
     map.setLayoutProperty(id, 'visibility', snapOn ? 'visible' : 'none'));
 });
 
@@ -116,6 +129,12 @@ async function loadCamera(f) {
   }
   if (existing?.roi_polygon) roi = existing.roi_polygon.slice();
   if (existing?.heading_guidelines) lanes = existing.heading_guidelines.map((g) => ({ sat: g.sat, heading: g.heading_deg }));
+  // HD맵 GCP 후보 — tools/gcp_candidates.py 산출물. 없으면 조용히 넘어간다.
+  cands = []; candIdx = 0;
+  try {
+    const r = await fetch(`data/gcp/${cam.cctv_id}.json`);
+    if (r.ok) cands = (await r.json()).candidates || [];
+  } catch (e) { /* 후보 없음 */ }
   redraw(); updateCounts();
   setStatus(`${cam.cctv_id} 로드 · ${modeHint()}` + (existing ? ' (기존 캘리브레이션 있음)' : ''));
 }
@@ -136,6 +155,18 @@ img.addEventListener('click', (e) => {
   if (!cam) return;
   const p = toNative(e);
   if (mode === 'gcp') {
+    // 후보 안내 모드: 지도 쪽 좌표를 HD맵 후보에서 그대로 가져오므로 **영상만 클릭**하면 된다.
+    // 지도를 눈대중으로 클릭하는 단계가 사라져 지도 쪽 오차(1~2m)가 통째로 없어진다.
+    if (candOn && candIdx < cands.length) {
+      const c = cands[candIdx];
+      pairs.push({ px: p, ll: c.lonlat });
+      addMapMarker(c.lonlat, pairs.length);
+      candIdx++;
+      setStatus(`GCP ${pairs.length}쌍 · 후보 #${c.no}(${c.kind}) 완료` +
+        (candIdx < cands.length ? ` → 다음 #${cands[candIdx].no} (${cands[candIdx].kind})` : ' · 후보 소진'));
+      redraw(); updateCounts();
+      return;
+    }
     if (pending) { setStatus('우측 지도에서 같은 지점 클릭'); return; }
     pending = p; setStatus(`GCP #${pairs.length + 1}: 우측 지도에서 같은 지점 클릭`);
   } else if (mode === 'roi') {
@@ -277,6 +308,17 @@ function redraw() {
   });
   // GCP 점
   pairs.forEach((p, i) => { const [x, y] = disp(...p.px); ov.appendChild(dot(x, y, i + 1, '#ec4899')); });
+  if (candOn) {
+    // 예측 위치는 현재 캘리브레이션으로 투영한 값이라 어긋나 있다. '이 근처의 저 표시'를
+    // 찾으라는 안내이지 그 픽셀을 그대로 찍으라는 뜻이 아니다(전체 그림은 output/gcp/*.png).
+    cands.forEach((c, i) => {
+      const [x, y] = disp(c.px[0], c.px[1]);
+      const d = dot(x, y, c.no, i === candIdx ? '#22d3ee' : '#64748b');
+      if (i < candIdx) d.style.opacity = '0.3';
+      if (i === candIdx) d.style.boxShadow = '0 0 0 3px rgba(34,211,238,0.45)';
+      ov.appendChild(d);
+    });
+  }
   if (pending) { const [x, y] = disp(...pending); ov.appendChild(dot(x, y, '?', '#22d3ee')); }
 }
 function dot(x, y, n, c) {

@@ -1,0 +1,76 @@
+{
+  "meta": {
+    "location_code": "PANGYO_2",
+    "note": "자동 캘리브레이션(VP+IPM) pitch7.0 yaw2.4 bearing349.4 Hc10.0"
+  },
+  "inputs": {
+    "cctv_path": "cctv_PANGYO_2.png"
+  },
+  "undistort": {
+    "resolution": [
+      720,
+      480
+    ],
+    "K": [
+      [
+        720.0,
+        0,
+        360.0
+      ],
+      [
+        0,
+        720.0,
+        240.0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "D": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "homography": {
+    "H": [
+      [
+        -0.06499313826774752,
+        -0.001839636204298206,
+        34.56144803640464
+      ],
+      [
+        -0.015005458524390771,
+        0.007968049277564547,
+        -42.9524227388338
+      ],
+      [
+        -3.282561998249204e-10,
+        -0.006619967784925205,
+        1.0
+      ]
+    ],
+    "fov_polygon": [],
+    "anchors_list": []
+  },
+  "parallax": {
+    "x_cam_coords_sat": 0,
+    "y_cam_coords_sat": 0,
+    "z_cam_meters": 10.0,
+    "px_per_meter": 1
+  },
+  "world": {
+    "epsg": 32652,
+    "origin_easting": 331864.990283777,
+    "origin_northing": 4140906.2980197133,
+    "ground_ellipsoid_h": 28.0
+  },
+  "use_svg": false,
+  "use_roi": false,
+  "ref_method": "center_bottom_side",
+  "proj_method": "down_h"
+}

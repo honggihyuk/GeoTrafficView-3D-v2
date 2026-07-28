@@ -1,6 +1,7 @@
 // 이중 패널 플레이어: 좌 = CCTV 영상 + bbox_3d(핑크), 우 = 지도 위 fill-extrusion 3D 박스.
 // video.currentTime 을 마스터 클럭으로 두 패널을 동일 프레임으로 동기화.
 import proj4 from 'proj4';
+import { buildTracks, sampleTracks, VehicleRenderer } from './vehicles.js';
 
 proj4.defs('EPSG:32652', '+proj=utm +zone=52 +datum=WGS84 +units=m +no_defs +type=crs');
 
@@ -13,6 +14,9 @@ const CLASS_C = { car: '#22d3ee', bus: '#f59e0b', truck: '#eab308', van: '#38bdf
                   tricycle: '#fb923c', 'awning-tricycle': '#fdba74' };
 
 let raf = null;
+let renderer = null;
+// 3D 차량 메시 사용 여부. 실패(WebGL2 미지원 등) 시 자동으로 fill-extrusion 박스로 폴백.
+let use3d = true;
 
 async function loadGz(url) {
   const res = await fetch(url);
@@ -46,6 +50,21 @@ export async function openPlayer(map, props) {
   video.loop = true; video.muted = true;
   video.play().catch(() => {});
 
+  // 트랙 타임라인(보간용) — 프레임을 그대로 찍지 않고 시간축에서 샘플링한다.
+  const tracks = buildTracks(frames, fps);
+  if (use3d) {
+    try {
+      if (!renderer) renderer = new VehicleRenderer(map, toLL);
+      // 카메라마다 world 원점이 다르므로 재사용 시 투영기를 반드시 갱신한다.
+      else renderer.setProjector(toLL);
+    } catch (e) {
+      console.warn('deck.gl 초기화 실패 — fill-extrusion 박스로 폴백합니다', e);
+      use3d = false;
+      if (renderer) { try { renderer.remove(); } catch (e2) { /* 이미 제거됨 */ } }
+      renderer = null;
+    }
+  }
+
   const [lon, lat] = toLL(0, 0);
   map.flyTo({ center: [lon, lat], zoom: 18, pitch: 60, bearing: 20, duration: 1500 });
 
@@ -63,24 +82,38 @@ export async function openPlayer(map, props) {
   }
 
   function render() {
-    const fi = Math.min(frames.length - 1, Math.floor((video.currentTime || 0) * fps));
+    const t = video.currentTime || 0;
+    // 좌(영상): 프레임 단위 — 영상 자체가 이산이므로 보간하지 않는다.
+    const fi = Math.min(frames.length - 1, Math.floor(t * fps));
     const objs = (frames[fi] && frames[fi].objects) || [];
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const feats = [];
     for (const o of objs) {
       if (o.bbox_3d && o.bbox_3d.length === 8) drawBox3d(o.bbox_3d);
-      if (o.sat_floor_box) {
-        const ring = o.sat_floor_box.map(([x, y]) => toLL(x, y));
-        ring.push(ring[0]);
-        const h = CLASS_H[o.class] || 1.6;
-        feats.push({
-          type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] },
-          properties: { base: 0, height: h, color: CLASS_C[o.class] || '#22d3ee' },
-        });
+    }
+
+    // 우(지도): 시간축 보간 — 30fps 키프레임을 rAF 주기에 맞춰 부드럽게 채운다.
+    if (renderer) {
+      try {
+        renderer.update(sampleTracks(tracks, t));
+      } catch (e) {
+        console.warn('3D 렌더 실패 — 박스로 폴백합니다', e);
+        renderer.remove(); renderer = null; use3d = false;
       }
     }
     const src = map.getSource('boxes');
-    if (src) src.setData({ type: 'FeatureCollection', features: feats });
+    if (src) {
+      const feats = renderer ? [] : objs.flatMap((o) => {
+        if (!o.sat_floor_box) return [];
+        const ring = o.sat_floor_box.map(([x, y]) => toLL(x, y));
+        ring.push(ring[0]);
+        return [{
+          type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] },
+          properties: { base: 0, height: CLASS_H[o.class] || 1.6,
+                        color: CLASS_C[o.class] || '#22d3ee' },
+        }];
+      });
+      src.setData({ type: 'FeatureCollection', features: feats });
+    }
     raf = requestAnimationFrame(render);
   }
   if (raf) cancelAnimationFrame(raf);
@@ -90,6 +123,7 @@ export async function openPlayer(map, props) {
     panel.style.display = 'none';
     video.pause();
     if (raf) cancelAnimationFrame(raf);
+    if (renderer) renderer.clear();
     const src = map.getSource('boxes');
     if (src) src.setData({ type: 'FeatureCollection', features: [] });
   };

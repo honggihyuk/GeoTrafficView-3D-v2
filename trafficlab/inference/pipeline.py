@@ -89,6 +89,25 @@ class InferencePipeline:
                             roi_mask = (cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) > 10)
         roi_method = g_data.get('roi_method', 'partial')
 
+        # 정적 오탐 마스크(영상에 박힌 안내문구/로고) — location/<LOC>/static_mask.png
+        # tools/static_mask.py 로 후보를 뽑고 사람이 승인해 만든다. ROI 마스크가 '안쪽만
+        # 남기는' 포함 마스크인 것과 달리, 이것은 '덮인 검출을 버리는' 제외 마스크다.
+        static_mask = None
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        try:
+            sm_path = os.path.join(repo_root, 'location', self.loc_code, 'static_mask.png')
+            if os.path.exists(sm_path):
+                sm = cv2.imread(sm_path, cv2.IMREAD_GRAYSCALE)
+                if sm is not None:
+                    if sm.shape[:2] != (real_h, real_w):
+                        sm = cv2.resize(sm, (real_w, real_h), interpolation=cv2.INTER_NEAREST)
+                    static_mask = sm > 127
+                    self.log_fn(f"정적 오탐 마스크 적용: {int(static_mask.sum()):,}px")
+        except Exception as e:
+            self.log_fn(f"정적 마스크 로드 실패(무시): {e}")
+        static_cover = g_data.get('static_mask_cover', 0.6)
+        n_static_dropped = 0
+
         self.log_fn(f"Loading Model: {full_config['model']['weights']}")
         model = YOLO(full_config['model']['weights'])
 
@@ -121,6 +140,13 @@ class InferencePipeline:
             track_ids = r.boxes.id.cpu().numpy() if r.boxes.id is not None else [None] * len(boxes)
 
             for j, box in enumerate(boxes):
+                if static_mask is not None:
+                    sx1, sy1, sx2, sy2 = map(int, box)
+                    sx1 = max(0, min(real_w - 1, sx1)); sy1 = max(0, min(real_h - 1, sy1))
+                    sx2 = max(0, min(real_w, sx2)); sy2 = max(0, min(real_h, sy2))
+                    if sx2 > sx1 and sy2 > sy1 and                             static_mask[sy1:sy2, sx1:sx2].mean() >= static_cover:
+                        n_static_dropped += 1
+                        continue
                 if roi_mask is not None:
                     x1, y1, x2, y2 = map(int, box)
                     x1 = max(0, min(real_w - 1, x1)); y1 = max(0, min(real_h - 1, y1))
@@ -190,6 +216,8 @@ class InferencePipeline:
             self.progress_fn(int((i / frames_to_process) * 100))
 
         cap.release()
+        if static_mask is not None:
+            self.log_fn(f"정적 오탐 마스크로 제외한 검출: {n_static_dropped}개")
         out_data["animation_frame_count"] = i
         out_path = os.path.join(out_subdir, f"{os.path.splitext(footage_name)[0]}.json.gz")
         ReplayWriter.write(out_path, out_data)

@@ -24,3 +24,6 @@ webmap/public/eval/
 location/**/footage/
 location/**/cctv_*.png
 location/**/*.bak
+
+# Office 임시 잠금 파일
+~$*

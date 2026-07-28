@@ -6,6 +6,7 @@
     "note": "정밀도로지도/점군 원본은 EPSG:32652 (UTM52N, 타원체고). 타원체고 = WGS84 타원체 기준 높이라 Cesium height와 직접 호환."
   },
   "paths": {
+    "hdmap_root": "C:/Gihyuk_2026/국토정보플랫폼",
     "hdmap_dir": "C:/Gihyuk_2026/국토정보플랫폼/(B110)정밀도로지도_인천송도_시범운행지구/SEC001_인천송도시범운행지구/HDMap_UTM52N_타원체고",
     "pointcloud_laz": "C:/Gihyuk_2026/국토정보플랫폼/(B111)정밀도로지도_유통점군_인천송도_시범운행지구/SEC001_인천송도시범운행지구_240319_N202412/SEC001_인천송도시범운행지구_240319_N202412.laz",
     "cctv_xlsx": "C:/Gihyuk_2026/도시교통정보센터_경찰청/OpenDataCCTV.xlsx",
