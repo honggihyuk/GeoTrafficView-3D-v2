@@ -4,7 +4,8 @@
 > 고해상도 위성지도 위에 **3D로 표출**하며, **공간 DB**에 적재해 **로컬 LLM**으로 질의하는
 > 교통 디지털 트윈. 본 문서는 실제 구현·측정 결과를 기준으로 작성되었다.
 
-작성 기준: 코드 Python 4,272줄 + 웹 JS 1,041줄 · 카메라 5대 · detection 20,221행
+작성 기준: 코드 Python 4,414줄 + 웹 JS 1,041줄 · 카메라 5대 · 마커 590개 · detection 20,221행
+최종 갱신: 로케이션 코드 실지명 통일(SONGDO_IC·YEONSU_JCT·OKRYEON_IC·PANGYO_2) 반영
 
 ---
 
@@ -53,6 +54,7 @@
 | 지역 원스톱 추가 | `tools/add_location.py` | 캡처→캘리브→추론→웹맵→DB |
 | 도시 배치 | `tools/run_city.py` | 다중 카메라 자동화 |
 | 마커 갱신 | `tools/refresh_markers.py` | replay 보존 + 중복 dedup |
+| **로케이션 이름 변경** | `tools/rename_location.py` | 파일·JSON·웹맵·DB 9곳 일괄(`--dry-run` 지원) |
 
 ### 2.2 인식·기하
 | 기능 | 구현 |
@@ -587,7 +589,63 @@ python tools/bridge_to_webmap.py --replay output/reprojected/<LOC>/clip.json.gz 
 
 ---
 
-## 11. 출처 및 라이선스
+## 11. 운영 노트
+
+### 11.1 로케이션 코드 명명 규칙
+
+로케이션 코드는 **실제 지점명을 로마자로** 표기한다(`[A-Za-z0-9_]+`, API 검증 정규식과 동일).
+
+| 현재 코드 | 지점 | 노선 |
+|-----------|------|------|
+| `SONGDO_IC` | 송도IC | 인천대교고속도로 |
+| `YEONSU_JCT` | 연수JCT | 인천대교고속도로 |
+| `OKRYEON_IC` | 옥련IC | 인천대교고속도로 |
+| `PANGYO_2` | 판교2 | 경부선 |
+| `SANGAM01` | 상암 | 서울 TOPIS |
+
+> 초기에는 수집 순서 기반(`ITS_C01`, `PANGYO01` 등)이었으나 지점 식별이 어려워 실제 지명으로 통일했다.
+
+**이름 변경은 반드시 도구로 한다.** 코드가 9곳에 흩어져 있어 수동 변경 시 정합성이 깨진다:
+```
+location/<LOC>/ (폴더·G_projection_<LOC>.json·cctv_<LOC>.png·_camera.json의 loc)
+output/**/<LOC>/ · eval/<LOC>/ · webmap/public/eval/<LOC>/
+webmap/public/data/{replay/<loc>.json.gz, footage/<loc>.mp4, cctv_<LOC>.png}
+cameras.geojson(cctv_id·replay_url·clip_url·snapshot_url) · replay 내부 location_code
+db/geotraffic.db(cctv·detection)
+```
+```bash
+python tools/rename_location.py --map OLD=NEW --dry-run   # 먼저 확인
+python tools/rename_location.py --map OLD=NEW             # 적용
+python tools/eval/check_calibration.py --all              # 검증
+```
+
+### 11.2 저장소
+
+| 저장소 | 내용 | 상태 |
+|--------|------|------|
+| `GeoTrafficView-3D` (v1) | Cesium 뷰어 + 점군/HD맵 벡터 + webmap 원형 + **TrafficLab 원본 앱 vendored** | 커밋·푸시 완료 |
+| `GeoTrafficView-3D-v2` (본 저장소) | MapLibre 웹맵 스택만 추출 + 측정 기반 고도화 | 커밋 완료 |
+
+커밋에서 제외(gitignore): `.env.local`(인증키) · `webmap/public/data/`(replay·클립·마커) ·
+`output/`(추론 산출물) · `models/*.pt` · `db/*.db` · `location/**/footage/` · `webmap/public/eval/`
+→ v2 코드베이스는 **83파일 0.40MB**. 데이터는 파이프라인으로 재생성한다.
+
+### 11.3 알려진 함정과 대응 (운영 중 발견)
+
+| 증상 | 원인 | 대응 |
+|------|------|------|
+| **[계산 & 저장] 버튼이 안 눌림** | 기존 차선 데이터는 `{sat,heading}`인데 저장 코드가 `{px}`만 가정 → 예외로 핸들러 중단 | 두 형식 모두 처리 + **저장 핸들러 try/catch로 오류 표면화**(버튼이 죽은 것처럼 보이지 않게) |
+| 재투영이 중첩 적용됨 | `reproject.py`가 이전 재투영 결과를 소스로 선택 | **원본 추론 결과 우선** 선택(`reprojected`/`lanesnap`/`retrack-bev` 제외) |
+| 캘리브레이션 자동 보정 후 악화 | LOO 기준 이상치 제거가 **원거리 점**을 먼저 삭제 → 깊이 스케일 소실 | `--fix`에 **기하 타당성 안전장치** — 나빠지면 `.bak`에서 자동 롤백 |
+| 마커가 튐 | 같은 카메라의 원본 ITS 마커와 캘리브레이션 마커가 공존 | 이름 일치 또는 250m 이내 원본 마커 **dedup** |
+| 한글 깨짐 | Windows 콘솔 cp949로 Python stdout 인코딩 | `sys.stdout.reconfigure('utf-8')` + spawn env `PYTHONUTF8=1` |
+| Overpass 406 | User-Agent 헤더 없음 | UA 지정 + 미러 3곳 순차 재시도 |
+| 라이브 HLS 캡처 0프레임 | 스트림 stall | read-fail 상한 + 소켓 타임아웃 |
+| TOPIS 스트림 cv2 실패 | Referer 검사 | `OPENCV_FFMPEG_CAPTURE_OPTIONS=referer;https://topis.seoul.go.kr/` |
+
+---
+
+## 12. 출처 및 라이선스
 
 - **엔진**: TrafficLab-3D (MIT © Yuk) 비-GUI 코어 이식·개조 — 원저작권·라이선스 고지 유지
 - **지도**: MapLibre GL JS · Esri World Imagery(Esri, Maxar, Earthstar Geographics, CNES/Airbus DS) · Sentinel-2 cloudless © EOX · OpenStreetMap(Overpass)
