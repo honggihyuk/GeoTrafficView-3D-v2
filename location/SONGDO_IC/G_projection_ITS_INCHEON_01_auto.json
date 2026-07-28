@@ -1,0 +1,76 @@
+{
+  "meta": {
+    "location_code": "ITS_INCHEON_01",
+    "note": "자동 캘리브레이션(VP+IPM) pitch8.9 yaw5.3 bearing294.2 Hc10.0"
+  },
+  "inputs": {
+    "cctv_path": "cctv_ITS_INCHEON_01.png"
+  },
+  "undistort": {
+    "resolution": [
+      720,
+      480
+    ],
+    "K": [
+      [
+        720.0,
+        0,
+        360.0
+      ],
+      [
+        0,
+        720.0,
+        240.0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "D": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "homography": {
+    "H": [
+      [
+        -0.0259091668407517,
+        -0.01175890840809468,
+        65.92885833114373
+      ],
+      [
+        -0.07561356763736575,
+        0.004029216804119107,
+        7.826231332630012
+      ],
+      [
+        -2.7057614611942363e-10,
+        -0.007895688809791362,
+        1.0
+      ]
+    ],
+    "fov_polygon": [],
+    "anchors_list": []
+  },
+  "parallax": {
+    "x_cam_coords_sat": 0,
+    "y_cam_coords_sat": 0,
+    "z_cam_meters": 10.0,
+    "px_per_meter": 1
+  },
+  "world": {
+    "epsg": 32652,
+    "origin_easting": 292008.0958375473,
+    "origin_northing": 4142559.3376880134,
+    "ground_ellipsoid_h": 28.0
+  },
+  "use_svg": false,
+  "use_roi": false,
+  "ref_method": "center_bottom_side",
+  "proj_method": "down_h"
+}

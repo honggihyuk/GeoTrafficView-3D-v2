@@ -1,0 +1,26 @@
+# 인증키
+.env
+.env.local
+.env.*.local
+
+# 의존성 / 빌드
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.venv/
+
+# 런타임 산출물 (재생성 가능)
+webmap/public/data/
+output/
+db/*.db
+models/*.pt
+*.pt
+
+# 평가용 프레임/라벨
+webmap/public/eval/
+
+# 카메라 원본 미디어 / 백업
+location/**/footage/
+location/**/cctv_*.png
+location/**/*.bak

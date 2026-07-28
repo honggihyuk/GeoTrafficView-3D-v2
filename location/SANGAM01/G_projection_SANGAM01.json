@@ -1,0 +1,110 @@
+{
+    "meta": {
+        "location_code": "SANGAM01",
+        "timestamp": "2026-07-27T19:07:58",
+        "note": "ITS SANGAM_TOPIS placeholder"
+    },
+    "inputs": {
+        "cctv_path": "cctv_SANGAM01.png",
+        "sat_path": "sat_SANGAM01.png",
+        "layout_path": "layout_SANGAM01.svg",
+        "roi_path": "roi_SANGAM01.png",
+        "note": "경로는 이 json 파일 기준 상대경로"
+    },
+    "undistort": {
+        "resolution": [
+            720,
+            480
+        ],
+        "K": [
+            [
+                720.0,
+                0,
+                360.0
+            ],
+            [
+                0,
+                720.0,
+                240.0
+            ],
+            [
+                0,
+                0,
+                1
+            ]
+        ],
+        "D": [
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "model": "radial_tangential"
+    },
+    "homography": {
+        "H": [
+            [
+                -1.7098412800546907,
+                -4.514484179897856e-08,
+                615.5428678406147
+            ],
+            [
+                -4.984166301406249e-16,
+                2.1266506856940284,
+                -1244.8179149393902
+            ],
+            [
+                -4.2468822890165605e-17,
+                -0.1370429151923059,
+                1.0
+            ]
+        ],
+        "fov_polygon": [
+            [
+                -6.0,
+                5.0
+            ],
+            [
+                6.0,
+                5.0
+            ],
+            [
+                6.0,
+                45.0
+            ],
+            [
+                -6.0,
+                45.0
+            ]
+        ],
+        "anchors_list": []
+    },
+    "parallax": {
+        "x_cam_coords_sat": 0.0,
+        "y_cam_coords_sat": 0.0,
+        "z_cam_meters": 8.0,
+        "scale": {
+            "measured_px": 0.0,
+            "real_m": 0.0,
+            "reference_anchors": []
+        },
+        "px_per_meter": 1.0
+    },
+    "world": {
+        "epsg": 32652,
+        "origin_easting": 313059.9501580567,
+        "origin_northing": 4161401.387594883,
+        "ground_ellipsoid_h": 28.0,
+        "note": "sat_coords(로컬 미터) → UTM52N: E=origin_easting+x, N=origin_northing+y"
+    },
+    "use_svg": false,
+    "layout_svg": {
+        "A": [],
+        "association_pairs": []
+    },
+    "use_roi": false,
+    "roi_method": "partial",
+    "ref_method": "center_bottom_side",
+    "proj_method": "down_h"
+}

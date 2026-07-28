@@ -1,0 +1,111 @@
+{
+    "meta": {
+        "location_code": "SONGDO_L020101",
+        "timestamp": "2026-07-27T14:06:27",
+        "note": "PLACEHOLDER 합성 캘리브레이션 — 실 프레임+GCP로 교체 필요"
+    },
+    "inputs": {
+        "cctv_path": "cctv_SONGDO_L020101.png",
+        "sat_path": "sat_SONGDO_L020101.png",
+        "layout_path": "layout_SONGDO_L020101.svg",
+        "roi_path": "roi_SONGDO_L020101.png",
+        "note": "경로는 이 json 파일 기준 상대경로",
+        "source_hint": "UTIC cctvStream.jsp (L020101)"
+    },
+    "undistort": {
+        "resolution": [
+            1920,
+            1080
+        ],
+        "K": [
+            [
+                1000.0,
+                0,
+                960.0
+            ],
+            [
+                0,
+                1000.0,
+                540.0
+            ],
+            [
+                0,
+                0,
+                1
+            ]
+        ],
+        "D": [
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "model": "radial_tangential"
+    },
+    "homography": {
+        "H": [
+            [
+                -0.6499999999999959,
+                0.0,
+                623.999999999996
+            ],
+            [
+                0.0,
+                0.9583333333333272,
+                -1261.6666666666586
+            ],
+            [
+                0.0,
+                -0.06166666666666629,
+                1.0
+            ]
+        ],
+        "fov_polygon": [
+            [
+                -6.0,
+                5.0
+            ],
+            [
+                6.0,
+                5.0
+            ],
+            [
+                6.0,
+                45.0
+            ],
+            [
+                -6.0,
+                45.0
+            ]
+        ],
+        "anchors_list": []
+    },
+    "parallax": {
+        "x_cam_coords_sat": 0.0,
+        "y_cam_coords_sat": 0.0,
+        "z_cam_meters": 8.0,
+        "scale": {
+            "measured_px": 0.0,
+            "real_m": 0.0,
+            "reference_anchors": []
+        },
+        "px_per_meter": 1.0
+    },
+    "world": {
+        "epsg": 32652,
+        "origin_easting": 291576.3589767098,
+        "origin_northing": 4140881.0891484935,
+        "ground_ellipsoid_h": 28.0,
+        "note": "sat_coords(로컬 미터) → UTM52N: E=origin_easting+x, N=origin_northing+y"
+    },
+    "use_svg": false,
+    "layout_svg": {
+        "A": [],
+        "association_pairs": []
+    },
+    "use_roi": false,
+    "roi_method": "partial",
+    "ref_method": "center_bottom_side",
+    "proj_method": "down_h"
+}

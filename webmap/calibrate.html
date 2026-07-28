@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GCP 캘리브레이션 — GeoTrafficView-3D</title>
+    <style>
+      html, body { margin: 0; height: 100%; font: 13px/1.5 -apple-system, "Segoe UI", sans-serif; background:#0c0e12; color:#e6edf3; }
+      #bar { height: 46px; display: flex; align-items: center; gap: 14px; padding: 0 14px; background:#12161d; border-bottom:1px solid #2b333d; }
+      #bar b { color:#22d3ee; }
+      #status { color:#9aa7b4; }
+      #wrap { display: flex; height: calc(100% - 46px); }
+      #left, #right { width: 50%; height: 100%; position: relative; }
+      #left { background:#000; overflow:hidden; }
+      #img { width:100%; height:100%; object-fit:contain; display:block; user-select:none; }
+      #dots { position:absolute; inset:0; pointer-events:none; }
+      .dot { position:absolute; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%;
+             background:#ec4899; color:#fff; font-size:10px; text-align:center; line-height:16px; border:2px solid #fff; }
+      .dot.pending { background:#22d3ee; }
+      #map { width:100%; height:100%; }
+      .mm { width:16px;height:16px;border-radius:50%;background:#ec4899;color:#fff;font-size:10px;text-align:center;line-height:16px;border:2px solid #fff; }
+      #panel { position:absolute; top:10px; right:10px; z-index:5; background:rgba(18,22,29,.92); padding:10px 12px; border-radius:8px; width:230px; }
+      #panel h3 { margin:0 0 6px; font-size:13px; }
+      #panel label { display:flex; justify-content:space-between; align-items:center; margin:3px 0; }
+      #panel input { width:80px; background:#0c0e12; color:#e6edf3; border:1px solid #2b333d; border-radius:4px; padding:2px 4px; }
+      #panel button { width:100%; margin-top:6px; padding:6px; border:0; border-radius:6px; cursor:pointer; font-weight:600; }
+      #save { background:#22d3ee; color:#04121a; }
+      #undo, #clear { background:#2b333d; color:#e6edf3; }
+      #result { margin-top:8px; font-size:11px; color:#7ee787; white-space:pre-wrap; }
+      .hint { color:#9aa7b4; font-size:11px; }
+    </style>
+  </head>
+  <body>
+    <div id="bar">
+      <b>GCP 캘리브레이션</b>
+      <span class="hint">① 좌측 CCTV에서 노면 특징점 클릭 → ② 우측 위성지도에서 같은 지점 클릭 (4쌍 이상)</span>
+      <span id="status"></span>
+    </div>
+    <div id="wrap">
+      <div id="left">
+        <img id="img" draggable="false" />
+        <div id="dots"></div>
+      </div>
+      <div id="right">
+        <div id="map"></div>
+        <div id="panel">
+          <h3>캘리브레이션</h3>
+          <label>카메라 <select id="camSel" style="width:130px;background:#0c0e12;color:#e6edf3;border:1px solid #2b333d;border-radius:4px;"></select></label>
+          <div style="margin:6px 0;border-top:1px solid #2b333d;padding-top:6px;">
+            <label style="justify-content:flex-start;gap:5px;"><input type="radio" name="mode" value="gcp" checked /> ① GCP 대응점(위치)</label>
+            <label style="justify-content:flex-start;gap:5px;"><input type="radio" name="mode" value="roi" /> ② ROI 도로영역</label>
+            <label style="justify-content:flex-start;gap:5px;"><input type="radio" name="mode" value="lane" /> ③ 차선 방향(heading)</label>
+          </div>
+          <label style="justify-content:flex-start;gap:5px;"><input type="checkbox" id="hdsnap" /> 🧲 HD맵 스냅(cm급 GCP)</label>
+          <label>카메라 높이(m) <input id="zcam" type="number" value="10" step="0.5" /></label>
+          <label>지면 타원체고(m) <input id="gh" type="number" value="28" step="0.5" /></label>
+          <div class="hint" id="counts">GCP 0 · ROI 0 · 차선 0</div>
+          <div id="guide" style="margin:6px 0; padding:6px 8px; background:#0c0e12; border:1px solid #2b333d;
+               border-radius:6px; font-size:11px; line-height:1.55;"></div>
+          <label style="justify-content:flex-start;gap:5px;"><input type="checkbox" id="showZones" checked /> 🎯 권장 GCP 구역</label>
+          <label style="justify-content:flex-start;gap:5px;"><input type="checkbox" id="showGrid" /> 📏 투영 격자 검증(차로 3.5m·깊이 10m)</label>
+          <button id="autocalib" style="background:#a855f7;color:#fff;">🤖 자동 캘리브레이션(부트스트랩)</button>
+          <button id="undo">되돌리기</button>
+          <button id="clear">현재 모드 지우기</button>
+          <button id="save">계산 &amp; 저장</button>
+          <div id="result"></div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/calibrate.js"></script>
+  </body>
+</html>

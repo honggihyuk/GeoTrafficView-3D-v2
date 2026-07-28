@@ -1,0 +1,48 @@
+{
+  "crs": {
+    "source_epsg": 32652,
+    "wgs84_epsg": 4326,
+    "ecef_epsg": 4978,
+    "note": "정밀도로지도/점군 원본은 EPSG:32652 (UTM52N, 타원체고). 타원체고 = WGS84 타원체 기준 높이라 Cesium height와 직접 호환."
+  },
+  "paths": {
+    "hdmap_dir": "C:/Gihyuk_2026/국토정보플랫폼/(B110)정밀도로지도_인천송도_시범운행지구/SEC001_인천송도시범운행지구/HDMap_UTM52N_타원체고",
+    "pointcloud_laz": "C:/Gihyuk_2026/국토정보플랫폼/(B111)정밀도로지도_유통점군_인천송도_시범운행지구/SEC001_인천송도시범운행지구_240319_N202412/SEC001_인천송도시범운행지구_240319_N202412.laz",
+    "cctv_xlsx": "C:/Gihyuk_2026/도시교통정보센터_경찰청/OpenDataCCTV.xlsx",
+    "web_data_out": "webmap/public/data"
+  },
+  "aoi_wgs84_bbox": {
+    "min_lon": 126.63,
+    "min_lat": 37.384,
+    "max_lon": 126.651,
+    "max_lat": 37.4,
+    "note": "송도 시범운행지구 (HD맵 범위 + 여유마진). CCTV 필터에 사용."
+  },
+  "center_wgs84": {
+    "lon": 126.640771,
+    "lat": 37.391861
+  },
+  "pointcloud": {
+    "target_points": 1500000,
+    "chunk_size": 5000000
+  },
+  "its": {
+    "endpoint": "https://openapi.its.go.kr:9443/cctvInfo",
+    "types": [
+      "its",
+      "ex"
+    ],
+    "cctv_type": 1,
+    "getType": "json",
+    "note": "apiKey는 환경변수 ITS_API_KEY로 주입. types: its=국도/도심, ex=고속도로. cctv_type 1=실시간 HLS 스트리밍."
+  },
+  "utic": {
+    "stream_endpoint": "https://www.utic.go.kr/jsp/map/cctvStream.jsp",
+    "default_kind": "N",
+    "note": "키값+IP 인증. apiKey=환경변수 UTIC_API_KEY. cctvid는 경찰청/UTIC 엑셀 CCTVID(L020xxx). cctvStream.jsp는 HLS 플레이어 HTML 페이지(iframe 재생). kind/id는 카메라별로 다를 수 있음."
+  },
+  "stream_match": {
+    "max_distance_m": 200,
+    "note": "경찰청 CCTV 포인트에 가장 가까운 ITS 스트림 CCTV를 이 거리 내에서 매칭."
+  }
+}

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GT 라벨러 — GeoTrafficView-3D</title>
+    <style>
+      html, body { margin:0; height:100%; background:#0c0e12; color:#e6edf3;
+        font:13px/1.5 -apple-system,"Segoe UI",sans-serif; overflow:hidden; }
+      #bar { height:44px; display:flex; align-items:center; gap:14px; padding:0 14px;
+        background:#12161d; border-bottom:1px solid #2b333d; }
+      #bar b { color:#22d3ee; }
+      #status { color:#9aa7b4; }
+      #wrap { display:flex; height:calc(100% - 44px); }
+      #stage { flex:1; position:relative; background:#000; overflow:hidden; }
+      #img { position:absolute; top:0; left:0; }
+      #cv { position:absolute; top:0; left:0; cursor:crosshair; }
+      #side { width:250px; background:#12161d; border-left:1px solid #2b333d; padding:10px 12px; overflow-y:auto; }
+      #side h3 { margin:0 0 6px; font-size:13px; }
+      #side .row { display:flex; justify-content:space-between; margin:2px 0; }
+      button { background:#20242b; color:#e6edf3; border:1px solid #2b333d; border-radius:6px;
+        padding:5px 8px; cursor:pointer; }
+      button.pri { background:#22d3ee; color:#04121a; border:0; font-weight:700; }
+      .cls { display:inline-block; padding:2px 7px; margin:2px 3px 2px 0; border-radius:10px;
+        cursor:pointer; border:1px solid #2b333d; font-size:11px; }
+      .cls.on { background:#22d3ee; color:#04121a; font-weight:700; }
+      .kbd { color:#9aa7b4; font-size:11px; }
+      .kbd b { color:#e6edf3; }
+      #boxlist { margin-top:8px; max-height:34vh; overflow-y:auto; font-size:11px; }
+      #boxlist div { padding:2px 4px; border-radius:4px; cursor:pointer; }
+      #boxlist div:hover { background:#20242b; }
+      #boxlist .sel { background:#1f6feb44; }
+      hr { border:0; border-top:1px solid #2b333d; margin:8px 0; }
+    </style>
+  </head>
+  <body>
+    <div id="bar">
+      <b>GT 라벨러</b>
+      <span id="frameInfo">-</span>
+      <button id="prev">◀ 이전(A)</button>
+      <button id="next">다음(D) ▶</button>
+      <button id="copy">이전 프레임 복사(C)</button>
+      <button id="save" class="pri">저장(S)</button>
+      <span id="status"></span>
+    </div>
+    <div id="wrap">
+      <div id="stage"><img id="img" /><canvas id="cv"></canvas></div>
+      <div id="side">
+        <h3>클래스</h3>
+        <div id="classes"></div>
+        <hr />
+        <h3>트랙 ID</h3>
+        <div class="row"><span>새 박스에 부여</span><b id="curId">1</b></div>
+        <div class="row">
+          <button id="idDown">−</button><button id="idNew">새 ID</button><button id="idUp">＋</button>
+        </div>
+        <div class="kbd" style="margin-top:6px;">
+          박스 드래그로 생성 · 클릭으로 선택<br />
+          <b>C</b> 이전프레임 복사(같은 ID 유지) — 트랙 라벨링 핵심<br />
+          <b>Del/Backspace</b> 삭제 · <b>1~9</b> 클래스 · <b>A/D</b> 프레임 이동<br />
+          <b>S</b> 저장 · <b>Z</b> 되돌리기
+        </div>
+        <hr />
+        <h3>이 프레임 박스 <span id="cnt">0</span></h3>
+        <div id="boxlist"></div>
+        <hr />
+        <div class="kbd" id="progress"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/label.js"></script>
+  </body>
+</html>

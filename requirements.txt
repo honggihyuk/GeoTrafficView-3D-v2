@@ -1,0 +1,20 @@
+# 데이터 추출(data_ingest)용
+geopandas>=1.0
+pandas>=2.0
+openpyxl>=3.1
+laspy[lazrs]>=2.5
+pyproj>=3.6
+numpy>=1.26
+
+# TrafficLab 엔진(trafficlab/)용
+opencv-python>=4.9
+pyyaml>=6.0
+
+# 추론(run_inference.py)용 — 선택(무거움, GPU 권장)
+# ultralytics>=8.3
+# torch>=2.5
+
+# PostGIS 적재(db/load_postgis.py)용 — 선택
+# sqlalchemy>=2.0
+# geoalchemy2>=0.15
+# psycopg2-binary>=2.9

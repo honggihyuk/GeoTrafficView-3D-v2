@@ -1,0 +1,76 @@
+{
+  "meta": {
+    "location_code": "ITS_C02",
+    "note": "자동 캘리브레이션(VP+IPM) pitch15.7 yaw-8.2 bearing358.6 Hc10.0"
+  },
+  "inputs": {
+    "cctv_path": "cctv_ITS_C02.png"
+  },
+  "undistort": {
+    "resolution": [
+      720,
+      480
+    ],
+    "K": [
+      [
+        720.0,
+        0,
+        360.0
+      ],
+      [
+        0,
+        720.0,
+        240.0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "D": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "homography": {
+    "H": [
+      [
+        -0.2790340200723153,
+        0.009143941912348215,
+        74.91065809587184
+      ],
+      [
+        0.0336910892338829,
+        0.07573140993703208,
+        -223.66789116263587
+      ],
+      [
+        8.666733491090251e-10,
+        -0.02705110314418168,
+        1.0
+      ]
+    ],
+    "fov_polygon": [],
+    "anchors_list": []
+  },
+  "parallax": {
+    "x_cam_coords_sat": 0,
+    "y_cam_coords_sat": 0,
+    "z_cam_meters": 10.0,
+    "px_per_meter": 1
+  },
+  "world": {
+    "epsg": 32652,
+    "origin_easting": 291018.7028574929,
+    "origin_northing": 4144655.097697047,
+    "ground_ellipsoid_h": 28.0
+  },
+  "use_svg": false,
+  "use_roi": false,
+  "ref_method": "center_bottom_side",
+  "proj_method": "down_h"
+}
