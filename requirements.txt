@@ -11,8 +11,10 @@ opencv-python>=4.9
 pyyaml>=6.0
 
 # 추론(run_inference.py)용 — 선택(무거움, GPU 권장)
-# ultralytics>=8.3
+# YOLO26은 ultralytics 8.4 계열부터 지원(2026-01 정식 출시).
+# ultralytics>=8.4
 # torch>=2.5
+# sahi>=0.11        # YOLO26 지원. model_type="ultralytics" 사용
 
 # PostGIS 적재(db/load_postgis.py)용 — 선택
 # sqlalchemy>=2.0

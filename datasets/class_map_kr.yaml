@@ -1,0 +1,160 @@
+# 국내 CCTV 택소노미(AI Hub 164) 통일용 클래스 리맵 명세
+#
+# 목적: 보조 해외 도로변 CCTV 데이터셋을 AI Hub 164의 3종(car/truck/bus)으로
+#       정규화해, 라벨 충돌 없이 사전학습에 투입한다.
+#
+# 핵심 원칙 — 오염에는 두 종류가 있고 대처가 다르다:
+#   (1) 택소노미 충돌  : 리맵으로 교정 가능. UA-DETRAC·MIO-TCD가 여기 해당.
+#   (2) 시점(viewpoint) 충돌 : 리맵으로 교정 불가. VisDrone이 여기 해당 → 제외.
+#
+# AI Hub 164 정의상 car = 승용차 + SUV + 밴 + 픽업.
+# 따라서 다른 데이터셋의 van/pickup/work_van은 truck이 아니라 car로 접어야 한다.
+# 이 접기를 빠뜨리면 "같은 차량에 서로 다른 라벨"이 들어가 학습이 오염된다.
+
+# v1 — AI Hub 164 그대로. 지금 학습 가능한 택소노미.
+target_taxonomy:
+  0: car     # 승용차·SUV·밴·픽업
+  1: truck   # 화물차 전체(트레일러 포함)
+  2: bus     # 버스
+
+# v2 — trailer 분리. AI Hub 165 승인 후 전환(trailer_prerequisite 참조).
+# 각 source의 map_v2 를 사용한다.
+target_taxonomy_v2:
+  0: car      # 승용차·SUV·밴·픽업
+  1: truck    # 화물차(트레일러 제외) — 프라이어를 하향 재보정해야 함
+  2: trailer  # 대형트레일러(트랙터+샤시 연결차)
+  3: bus      # 버스
+
+sources:
+
+  aihub_164:
+    role: primary            # 최종 파인튜닝 대상(타깃 도메인)
+    viewpoint: roadside_pole
+    status: 신청예정
+    annotation_format: "XML(bbox 좌상단·우하단 + 폴리곤)"
+    note: "리맵 불필요 — 이 파일의 기준 택소노미"
+    map:
+      car: car
+      truck: truck
+      bus: bus
+    # v2에서 164의 truck은 트레일러를 포함한 혼합 라벨이라 trailer로 분해할 수 없다.
+    # 이 클래스를 그대로 쓰면 trailer를 truck으로 되돌리는 역-감독이 된다.
+    map_v2:
+      car: car
+      truck: __conflict__    # trailer_prerequisite 참조 — 해소 전에는 사용 금지
+      bus: bus
+
+  aihub_165:
+    role: primary_v2         # trailer 분리의 유일한 국내 라벨 출처
+    viewpoint: roadside_pole
+    status: 신청예정          # 164와 동시 신청
+    annotation_format: "COCO 계열 JSON(추정 — 승인 후 실물 확인 필요)"
+    note: >-
+      7종(승용차·소형버스·대형버스·트럭·대형트레일러·오토바이·보행자).
+      대형트레일러가 별도 라벨로 존재해, 164의 truck 혼합 문제를 해소한다.
+      Tracking 어노테이션 36만 장도 함께 제공(BEVTracker 검증용).
+      시내도로 데이터라 고속도로 지점에는 도메인 갭이 남는다 — 164와 병용할 것.
+    map_v2:
+      승용차: car
+      소형버스: bus          # 카운티급. 별도 분리는 165 도입 후 재검토
+      대형버스: bus
+      트럭: truck            # 트레일러가 분리돼 있으므로 순수 화물차
+      대형트레일러: trailer
+      오토바이: __drop__     # 고속도로 통행 불가 — 타깃 도메인 밖
+      보행자: __drop__
+
+  ua_detrac:
+    role: pretrain           # 사전학습 보조
+    viewpoint: roadside_pole # 우리 소스와 동일 계열
+    note: >-
+      'others'는 트럭·특수차·오분류가 섞인 잡동사니 클래스라 신뢰할 수 없다.
+      truck으로 접으면 truck 클래스에 노이즈를 주입하므로 폐기한다.
+    map:
+      car: car
+      van: car               # AI Hub car에 밴 포함
+      bus: bus
+      others: __drop__
+    map_v2:
+      car: car
+      van: car
+      bus: bus
+      others: __drop__       # 트레일러가 섞여 있으나 식별 불가 — trailer로 못 씀
+
+  mio_tcd:
+    role: pretrain
+    viewpoint: fixed_traffic_camera
+    note: >-
+      articulated_truck(트레일러)은 국내 기준 별도 차종이지만 164에 대응 클래스가
+      없어 truck으로 접는다. measurements_kr.truck(7.6m) 프라이어로는 과소 추정되며,
+      AI Hub 165(7종) 도입 시 trailer로 분리해야 한다.
+      이륜·보행자는 164에 없으므로 폐기(추론 시에도 검출 대상 아님).
+    map:
+      car: car
+      pickup_truck: car      # AI Hub car에 픽업 포함
+      work_van: car          # AI Hub car에 밴 포함
+      single_unit_truck: truck
+      articulated_truck: truck
+      bus: bus
+      bicycle: __drop__
+      motorcycle: __drop__
+      pedestrian: __drop__
+      motorized_vehicle: __drop__      # 클래스 미상 차량 — 라벨 노이즈
+      non-motorized_vehicle: __drop__
+    # v2에서 articulated_truck이 유일하게 즉시 쓸 수 있는 trailer 라벨원이다.
+    # 다만 북미 세미트레일러라 국내 컨테이너 트레일러와 형상이 완전히 같지는 않다
+    # (Stage A 사전학습용으로만 유효, Stage B는 165 필요).
+    map_v2:
+      car: car
+      pickup_truck: car
+      work_van: car
+      single_unit_truck: truck
+      articulated_truck: trailer       # v1의 truck → v2의 trailer
+      bus: bus
+      bicycle: __drop__
+      motorcycle: __drop__
+      pedestrian: __drop__
+      motorized_vehicle: __drop__
+      non-motorized_vehicle: __drop__
+
+  visdrone:
+    role: excluded
+    viewpoint: uav_nadir_high_oblique
+    note: >-
+      제외 사유는 택소노미가 아니라 시점이다. car/van→car, truck→truck, bus→bus로
+      리맵 자체는 가능하지만, UAV 10~100m 준-천저 시점이 학습시키는 종횡비·원근
+      단서가 갓길 폴 8~10m 저각 사선과 근본적으로 다르다. 리맵으로 교정되지 않는다.
+      tricycle·awning-tricycle은 국내 고속도로에 존재하지 않는 클래스.
+      기존 결과 재현용으로만 보존(inference_config.yaml 레거시 프로파일).
+
+# 권장 학습 순서 — 혼합이 아니라 2단계
+#   Stage A: ua_detrac + mio_tcd (리맵 적용) 로 사전학습
+#            → 도로변 고정 카메라 시점·야간·악천후 사전지식 확보
+#   Stage B: aihub_164 단독 파인튜닝
+#            → 국내 도메인으로 수렴. 여기서 해외 데이터를 섞으면 타깃 도메인이 희석된다.
+#
+# 한 번에 섞지 않는 이유: 해외 데이터 볼륨(UA-DETRAC 121만 박스 + MIO-TCD 78.6만 장)이
+# AI Hub 164(30만 장)보다 커서, 단순 혼합 시 국내 도메인이 소수파가 된다.
+
+
+# ── trailer 분리(v2)의 선행조건 ──────────────────────────────────────────
+#
+# 결론: **AI Hub 165 승인 전에는 trailer 분리 학습을 시작할 수 없다.**
+# 프라이어·프로파일·리맵은 준비 완료. 막힌 건 라벨이다.
+#
+# 왜 164만으로는 안 되는가 —
+#   164는 3종뿐이라 실제 트레일러가 전부 `truck`으로 라벨돼 있다.
+#   Stage A에서 MIO-TCD articulated_truck으로 trailer를 배워도,
+#   Stage B(164)에서 같은 트레일러 픽셀에 "이건 truck이다"라는 정답이 주어진다.
+#   단순한 라벨 부재가 아니라 **역-감독(negative supervision)** 이다.
+#   Stage A의 trailer 지식이 Stage B에서 능동적으로 지워진다.
+#   → aihub_164.map_v2.truck 을 __conflict__ 로 표시한 이유.
+#
+# 해소 경로 (권장순)
+#   1) AI Hub 165 승인 — 대형트레일러가 별도 라벨. 정공법.
+#   2) 164 truck 부분 재라벨 — 트레일러만 골라 재주석. 인건비 발생.
+#   3) 164 truck 클래스 손실 마스킹 — Stage B에서 truck/trailer 헤드의 손실을
+#      제외하고 car/bus만 학습. trailer가 국내 도메인 적응을 못 받아 차선책.
+#
+# 그때까지의 운용: v1(kr_cctv, measurements_kr)을 그대로 쓴다.
+# v1의 truck(7.60m)은 트레일러를 포함한 혼합 프라이어라 이 상태에서 정합적이다.
+# v2로 전환할 때 truck을 6.80m로 함께 내리지 않으면 일반 화물차가 과대 추정된다.
