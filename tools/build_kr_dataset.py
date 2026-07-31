@@ -18,10 +18,12 @@ CLI:
 """
 import argparse
 import csv
+import io
 import os
 import shutil
 import sys
 import xml.etree.ElementTree as ET
+import zipfile
 from collections import Counter
 
 import yaml
@@ -84,18 +86,53 @@ def resolve(cmap, src_class, source):
 #            [(x1, y1, x2, y2), ...])              # 주석 미보장 영역(--mask-drops 대상)
 # 를 순서대로 내보낸다. 좌표는 픽셀 절대값.
 
+class ZipSrc:
+    """zip 안의 이미지를 가리키는 참조. 압축을 풀지 않고 바로 읽는다.
+
+    AI Hub 164 원천은 30GB급이라 전개하면 같은 크기가 한 번 더 필요하다.
+    어차피 stride로 일부만 쓰므로 필요한 프레임만 꺼내 쓰는 편이 낫다.
+    파일명이 CP949로 저장돼 있어 전개 시 폴더명이 깨지는 문제도 함께 피한다.
+    """
+    __slots__ = ("zpath", "member")
+    _handles = {}
+
+    def __init__(self, zpath, member):
+        self.zpath, self.member = zpath, member
+
+    @property
+    def ext(self):
+        return os.path.splitext(self.member)[1]
+
+    def read(self):
+        z = ZipSrc._handles.get(self.zpath)
+        if z is None:
+            z = ZipSrc._handles[self.zpath] = zipfile.ZipFile(self.zpath)
+        return z.read(self.member)
+
+
+def _src_ext(src):
+    return src.ext if isinstance(src, ZipSrc) else os.path.splitext(src)[1]
+
+
 def _boxes_center_in(regions, x1, y1, x2, y2):
     cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
     return any(rx1 <= cx <= rx2 and ry1 <= cy <= ry2 for rx1, ry1, rx2, ry2 in regions)
 
 
 def iter_ua_detrac(root, split, stride):
-    """UA-DETRAC: 시퀀스별 XML + Insight-MVT_Annotation_* 이미지 디렉터리."""
+    """UA-DETRAC: 시퀀스별 XML + 시퀀스명 디렉터리의 프레임 이미지.
+
+    배포본마다 디렉터리 이름이 다르다. Kaggle 미러(bratjay/ua-detrac-orig)는
+    이미지가 DETRAC-Images/, 주석이 DETRAC-{Train,Test}-Annotations-XML/ 이고
+    둘 다 같은 이름으로 한 겹 더 감싸여 있다(_first_existing 이 자동 해제).
+    """
     tag = "Train" if split == "train" else "Test"
     ann_dir = _first_existing(root, [f"DETRAC-{tag}-Annotations-XML",
                                      f"DETRAC-{tag}-Annotations-XML-v3",
                                      f"{tag}-Annotations-XML"])
-    img_root = _first_existing(root, [f"Insight-MVT_Annotation_{tag}"])
+    # 이미지는 train/test가 한 디렉터리에 합쳐진 배포본이 있다. 어느 쪽이든
+    # 시퀀스명으로 찾으므로, 해당 split의 XML 목록이 실제 분할을 결정한다.
+    img_root = _first_existing(root, [f"Insight-MVT_Annotation_{tag}", "DETRAC-Images"])
 
     for xml_name in sorted(os.listdir(ann_dir)):
         if not xml_name.endswith(".xml"):
@@ -163,8 +200,82 @@ def iter_mio_tcd(root, split, stride):
         yield img, stem, w, h, rows[stem], []
 
 
-PARSERS = {"ua_detrac": iter_ua_detrac, "mio_tcd": iter_mio_tcd}
-# AI Hub 164/165는 승인 후 실물 XML/JSON 스키마를 확인하고 추가한다.
+IMG_EXT = (".png", ".jpg", ".jpeg")
+
+
+def iter_aihub_164(root, split, stride):
+    """AI Hub 164 고속도로 — CVAT 1.1 XML. zip을 전개하지 않고 직독한다.
+
+    배포 구조: <Training|Validation>/바운딩박스/ 아래에
+      [라벨]<권역>.zip   클립당 XML 1개(<image> 안에 <box label xtl ytl xbr ybr>)
+      [원천]<권역>.zip   클립명 디렉터리 안에 프레임 PNG
+
+    실물에서 확인된 예외 두 가지:
+      · 프레임이 <클립명>/origin/ 아래 한 단계 더 들어간 클립이 있다.
+        직속 부모로 클립을 판정하면 'origin'이라는 유령 클립이 생긴다
+        → 조상 디렉터리 중 라벨명과 일치하는 것을 클립으로 삼는다.
+      · 해상도가 클립마다 다르다(세로형 1080x1920 실측). XML의 per-image
+        width/height를 그대로 쓰고 고정값을 가정하지 않는다.
+    """
+    sub = "Training" if split == "train" else "Validation"
+    d = _first_existing(root, [os.path.join(sub, "바운딩박스"),
+                               os.path.join(sub, "BoundingBox")])
+    zs = [os.path.join(d, f) for f in sorted(os.listdir(d))
+          if f.lower().endswith(".zip") and os.path.getsize(os.path.join(d, f))]
+    labs = [p for p in zs if os.path.basename(p).startswith("[라벨]")]
+    srcs = [p for p in zs if os.path.basename(p).startswith("[원천]")]
+    if not labs or not srcs:
+        raise SystemExit(f"{d}: [라벨]/[원천] zip을 찾지 못함")
+
+    # 1) 라벨이 존재하는 클립명 수집(XML 파싱 없이 파일명만)
+    stems = set()
+    for p in labs:
+        with zipfile.ZipFile(p) as z:
+            stems |= {os.path.splitext(os.path.basename(n))[0]
+                      for n in z.namelist() if n.lower().endswith(".xml")}
+
+    # 2) 원천 인덱싱 — 조상 디렉터리로 클립 판정
+    idx = {}
+    for p in srcs:
+        with zipfile.ZipFile(p) as z:
+            for n in z.namelist():
+                if not n.lower().endswith(IMG_EXT):
+                    continue
+                clip = next((x for x in reversed(n.split("/")[:-1]) if x in stems), None)
+                if clip is None:
+                    EXTRA_DROPS["클립미상_원천"] += 1
+                    continue
+                idx.setdefault(clip, {})[os.path.basename(n)] = ZipSrc(p, n)
+
+    # 3) 이미지가 있는 클립의 XML만 파싱(라벨 전량 파싱은 낭비)
+    for p in labs:
+        with zipfile.ZipFile(p) as z:
+            for n in sorted(x for x in z.namelist() if x.lower().endswith(".xml")):
+                clip = os.path.splitext(os.path.basename(n))[0]
+                frames = idx.get(clip)
+                if not frames:
+                    continue
+                rootel = ET.fromstring(z.read(n))
+                for i, im in enumerate(rootel.findall("image")):
+                    if i % stride:
+                        continue
+                    base = os.path.basename((im.get("name") or "").replace("\\", "/"))
+                    src = frames.get(base)
+                    if src is None:
+                        EXTRA_DROPS["프레임없음"] += 1
+                        continue
+                    w, h = int(im.get("width")), int(im.get("height"))
+                    boxes = [(b.get("label"),
+                              float(b.get("xtl")), float(b.get("ytl")),
+                              float(b.get("xbr")), float(b.get("ybr")))
+                             for b in im.findall("box")]
+                    stem = os.path.splitext(base)[0].replace(" ", "_")
+                    yield src, stem, w, h, boxes, []
+
+
+PARSERS = {"ua_detrac": iter_ua_detrac, "mio_tcd": iter_mio_tcd,
+           "aihub_164": iter_aihub_164}
+# AI Hub 165는 승인 후 실물 스키마를 확인하고 추가한다.
 # 문서만 보고 추측해 넣으면 조용히 어긋난 라벨을 만든다.
 
 
@@ -172,8 +283,24 @@ def _first_existing(root, candidates, want_dir=True):
     for c in candidates:
         p = os.path.join(root, c)
         if (os.path.isdir(p) if want_dir else os.path.isfile(p)):
-            return p
+            return _unwrap_single(p) if want_dir else p
     raise SystemExit(f"{root} 아래에서 찾지 못함: {candidates}")
+
+
+def _unwrap_single(d, log=print):
+    """Kaggle 배포본에서 흔한 'X/X/실제내용' 이중 포장을 벗긴다.
+
+    '하위 항목이 하나뿐'이라는 조건만으로는 부족하다 — 시퀀스가 한 개뿐인
+    디렉터리까지 파고들어 정상 레이아웃을 깨뜨린다(실측). 안쪽 이름이
+    바깥과 동일할 때만 내려간다.
+    """
+    while True:
+        name = os.path.basename(os.path.normpath(d))
+        inner = os.path.join(d, name)
+        if not os.path.isdir(inner):
+            return d
+        log(f"  포장 해제: {name}/{name}/")
+        d = inner
 
 
 _SIZE_CACHE = {}
@@ -200,6 +327,10 @@ _PLACE_FN = []   # 처음 성공한 방식을 기억. Windows에서 심볼릭이
 def _place(src, dst, mode, log=print):
     if os.path.exists(dst):
         return
+    if isinstance(src, ZipSrc):     # zip 직독 — 링크 불가, 항상 써야 한다
+        with open(dst, "wb") as f:
+            f.write(src.read())
+        return
     if mode == "copy":
         shutil.copy2(src, dst); return
     if _PLACE_FN:
@@ -223,12 +354,22 @@ PAD = (114, 114, 114)
 def _paint(src, dst, regions):
     """주석 미보장/폐기 영역을 덮어 배경 음성으로 학습되는 것을 막는다."""
     from PIL import Image, ImageDraw
-    with Image.open(src) as im:
+    fp = io.BytesIO(src.read()) if isinstance(src, ZipSrc) else src
+    with Image.open(fp) as im:
         im = im.convert("RGB")
         d = ImageDraw.Draw(im)
         for x1, y1, x2, y2 in regions:
             d.rectangle([x1, y1, x2, y2], fill=PAD)
         im.save(dst, quality=95)
+
+
+def _to_jpeg(src, dst, quality):
+    """PNG 원본을 JPEG로 줄여 쓴다. AI Hub 164는 1080x1920 PNG라 프레임당
+    1.3MB인데, JPEG로 바꾸면 1/5 이하가 된다(디스크가 병목인 환경 대비)."""
+    from PIL import Image
+    fp = io.BytesIO(src.read()) if isinstance(src, ZipSrc) else src
+    with Image.open(fp) as im:
+        im.convert("RGB").save(dst, "JPEG", quality=quality)
 
 
 # ── 빌드 ─────────────────────────────────────────────────────────────────────
@@ -245,7 +386,7 @@ def check(source, taxonomy, force, log=print):
 
 
 def build(source, root, out, split, taxonomy, stride, link, force,
-          mask_drops=False, log=print):
+          mask_drops=False, to_jpeg=False, jpeg_quality=92, log=print):
     names, idx, cmap = load_taxonomy(source, taxonomy, force)
     if source not in PARSERS:
         raise SystemExit(f"[{source}] 파서 미구현. 지원: {', '.join(sorted(PARSERS))}\n"
@@ -288,11 +429,14 @@ def build(source, root, out, split, taxonomy, stride, link, force,
         if not lines:
             n_empty += 1
         name = f"{source}_{stem}"
-        dst = os.path.join(img_out, name + os.path.splitext(img)[1])
+        ext = ".jpg" if to_jpeg else _src_ext(img)
+        dst = os.path.join(img_out, name + ext)
         if paint:
             _paint(img, dst, paint)
             n_painted += 1
             n_paint_box += len(paint)
+        elif to_jpeg:
+            _to_jpeg(img, dst, jpeg_quality)
         else:
             _place(img, dst, link, log)
         with open(os.path.join(lbl_out, name + ".txt"), "w", encoding="utf-8") as f:
@@ -350,6 +494,10 @@ def main():
     ap.add_argument("--mask-drops", action="store_true",
                     help="폐기 박스·주석 미보장 영역을 회색으로 덮는다. "
                          "UA-DETRAC others(트럭 다수)가 truck의 배경 음성이 되는 것을 막음")
+    ap.add_argument("--to-jpeg", action="store_true",
+                    help="출력 이미지를 JPEG로 변환. AI Hub 164는 1080x1920 PNG라 "
+                         "프레임당 1.3MB — 디스크가 빠듯하면 권장")
+    ap.add_argument("--jpeg-quality", type=int, default=92)
     a = ap.parse_args()
     if a.check:
         check(a.source, a.taxonomy, a.force)
@@ -357,7 +505,8 @@ def main():
     if not a.root:
         ap.error("--root 는 필수 (매핑만 볼 거라면 --check)")
     build(a.source, a.root, os.path.join(REPO, a.out) if not os.path.isabs(a.out) else a.out,
-          a.split, a.taxonomy, max(1, a.stride), a.link, a.force, a.mask_drops)
+          a.split, a.taxonomy, max(1, a.stride), a.link, a.force, a.mask_drops,
+          a.to_jpeg, a.jpeg_quality)
 
 
 if __name__ == "__main__":
