@@ -2,7 +2,8 @@
 SAHI 슬라이싱(또는 풀프레임) 추론 + ByteTrack 추적 → .json.gz.
 
 - slice>0: SAHI 슬라이싱(원거리 소형차 대폭 개선). slice<=0: 풀프레임(고속, 다중카메라 배치용).
-- 교통 파인튜닝 모델(VisDrone YOLOv8) + supervision.ByteTrack.
+- 교통 파인튜닝 모델(YOLO26 / AI Hub 164 국내 CCTV) + supervision.ByteTrack.
+  레거시 VisDrone 가중치도 --measure measurements_visdrone_full 로 그대로 동작.
 - 투영/기구학/3D: 이식 GProjection·TrackSmoother. location/<loc>/G_projection 사용.
 
 CLI:  python run_inference_sahi.py --loc SONGDO_IC --source <clip> [--slice 384|0] [--max-frame N]
@@ -27,6 +28,12 @@ KIN = {"heading_ema": {"alpha_min": 0.05, "alpha_max": 0.4, "speed_ref": 3.0},
        "heading_sat_coords_jitter_radius": 0.5, "heading_sat_coords_jitter_frames": 8}
 VISDRONE = ['pedestrian', 'people', 'bicycle', 'car', 'van', 'truck',
             'tricycle', 'awning-tricycle', 'bus', 'motor']
+KR_CCTV = ['car', 'truck', 'bus']  # AI Hub 164 (고속도로) 택소노미
+KR_CCTV_V2 = ['car', 'truck', 'trailer', 'bus']  # 164 + trailer 분리(165 필요)
+
+# 가중치가 category_mapping을 노출하지 않을 때의 클래스명 폴백.
+# measure 이름으로 고르므로, KR 모델에 VisDrone 이름이 붙는 사고를 막는다.
+NAME_FALLBACK = {"measurements_kr": KR_CCTV, "measurements_kr_v2": KR_CCTV_V2}
 
 
 def run_sahi(loc, source, model=None, measure="measurements_visdrone_full",
@@ -57,13 +64,11 @@ def run_sahi(loc, source, model=None, measure="measurements_visdrone_full",
         return min(guides, key=lambda g: (sat[0] - g[0][0]) ** 2 + (sat[1] - g[0][1]) ** 2)[1]
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    try:
-        det = AutoDetectionModel.from_pretrained(model_type="ultralytics", model_path=model,
-                                                 confidence_threshold=conf, device=device)
-    except Exception:
-        det = AutoDetectionModel.from_pretrained(model_type="yolov8", model_path=model,
-                                                 confidence_threshold=conf, device=device)
-    names = getattr(det, "category_mapping", None) or {str(i): n for i, n in enumerate(VISDRONE)}
+    # model_type은 "ultralytics" 고정 — 레거시 "yolov8" 백엔드는 YOLO26을 로드하지 못한다.
+    det = AutoDetectionModel.from_pretrained(model_type="ultralytics", model_path=model,
+                                             confidence_threshold=conf, device=device)
+    fallback = NAME_FALLBACK.get(measure, VISDRONE)
+    names = getattr(det, "category_mapping", None) or {str(i): n for i, n in enumerate(fallback)}
 
     cap = cv2.VideoCapture(source)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0

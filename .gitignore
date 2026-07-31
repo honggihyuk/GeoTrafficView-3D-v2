@@ -17,6 +17,11 @@ db/*.db
 models/*.pt
 *.pt
 
+# 학습 데이터셋 빌드 산출물 (tools/build_kr_dataset.py 로 재생성)
+# 명세(datasets/class_map_kr.yaml)만 추적하고 이미지·라벨은 제외
+datasets/kr/
+runs/
+
 # 평가용 프레임/라벨
 webmap/public/eval/
 
@@ -24,3 +29,6 @@ webmap/public/eval/
 location/**/footage/
 location/**/cctv_*.png
 location/**/*.bak
+
+# Office 임시 잠금 파일
+~$*

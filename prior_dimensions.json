@@ -1,4 +1,63 @@
 {
+  "_comment_kr": [
+    "measurements_kr — AI Hub 164 '교통문제 해결을 위한 CCTV 교통 영상(고속도로)' 3종 택소노미(car/truck/bus).",
+    "car는 AI Hub 정의에 따라 승용차·SUV·밴·픽업을 모두 포함한 혼합 프라이어.",
+    "국내 법정 제원 상한(자동차관리법 시행규칙): 폭 2.5m, 높이 4.0m, 길이 13m(연결차 16.7m).",
+    "VisDrone 프라이어 대비 수정점: car 길이 3.8→4.80m(중국 소형차 기준 → 국내 중형 기준),",
+    "bus 폭 3.0→2.49m(3.0m는 국내 법정 상한 2.5m 초과로 애초에 불가능한 값), truck 길이 5.5→7.60m.",
+    "주의: truck은 1톤 포터(5.1m)부터 대형 카고(9.5m)까지 포괄하는 단일 클래스라 분산이 가장 큼.",
+    "AI Hub 165(시내도로, 7종) 도입 시 trailer를 분리하면 이 오차가 줄어듦."
+  ],
+  "measurements_kr": {
+    "car": {
+      "width": 1.87,
+      "length": 4.8,
+      "height": 1.6
+    },
+    "truck": {
+      "width": 2.3,
+      "length": 7.6,
+      "height": 2.95
+    },
+    "bus": {
+      "width": 2.49,
+      "length": 12.2,
+      "height": 3.45
+    }
+  },
+  "_comment_kr_v2": [
+    "measurements_kr_v2 — measurements_kr에서 trailer(대형트레일러)를 분리한 4종.",
+    "핵심: trailer를 떼어내면 truck 프라이어를 반드시 '내려' 재보정해야 한다.",
+    "measurements_kr.truck(7.60m)은 1톤 포터부터 트랙터-트레일러까지 전부 섞인 값이었다.",
+    "trailer를 분리하고도 7.60m를 유지하면 일반 화물차 박스가 과대 추정된다.",
+    "→ truck 7.60→6.80m, 폭 2.30→2.15m, 높이 2.95→2.75m 로 하향 재보정.",
+    "trailer: 트랙터+40ft 샤시 기준. 연결자동차 법정 길이 상한 16.7m, 높이 상한 4.0m.",
+    "학습 전제: 164에는 trailer 라벨이 없다(트레일러가 truck으로 라벨됨).",
+    "164 단독 파인튜닝으로는 이 클래스가 학습되지 않는다 — AI Hub 165 필요. 상세는",
+    "datasets/class_map_kr.yaml 의 trailer_prerequisite 참조."
+  ],
+  "measurements_kr_v2": {
+    "car": {
+      "width": 1.87,
+      "length": 4.8,
+      "height": 1.6
+    },
+    "truck": {
+      "width": 2.15,
+      "length": 6.8,
+      "height": 2.75
+    },
+    "trailer": {
+      "width": 2.49,
+      "length": 16.0,
+      "height": 3.9
+    },
+    "bus": {
+      "width": 2.49,
+      "length": 12.2,
+      "height": 3.45
+    }
+  },
   "measurements_visdrone": {
     "pedestrian": {
       "width": 0.5,

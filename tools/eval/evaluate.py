@@ -41,18 +41,26 @@ def iou(a, b):
     return inter / ua if ua > 0 else 0.0
 
 
+def in_roi(bb, roi):
+    """박스 중심이 ROI 안인지. GT와 예측에 **같은 기준**을 적용해야 공정하다."""
+    if roi is None:
+        return True
+    cx, cy = (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2
+    return roi[0] <= cx <= roi[2] and roi[1] <= cy <= roi[3]
+
+
 def load_gt(loc):
     p = os.path.join(REPO, "eval", loc, "labels.json")
     if not os.path.exists(p):
         sys.exit(f"GT 없음: {p}\n  → tools/eval/extract_frames.py 후 label.html 에서 라벨링하세요")
     d = json.load(open(p, encoding="utf-8"))
     gt = defaultdict(list)
-    for b in d["boxes"]:
+    for b in d.get("boxes", []):
         gt[int(b["frame"])].append({"id": int(b["track_id"]), "cls": b["class"], "bbox": b["bbox"]})
     return d, gt
 
 
-def load_pred(path, frames):
+def load_pred(path, frames, roi=None):
     d = json.load(gzip.open(path, "rt", encoding="utf-8"))
     pr = defaultdict(list)
     for fr in d["frames"]:
@@ -63,8 +71,11 @@ def load_pred(path, frames):
             bb = o.get("bbox_2d")
             if not bb:
                 continue
+            bb = [float(v) for v in bb]
+            if not in_roi(bb, roi):
+                continue          # ROI 밖 예측은 FP로 세지 않는다(GT도 ROI 안만 있으므로)
             pr[i].append({"id": o.get("tracked_id"), "cls": o.get("class"),
-                          "bbox": [float(v) for v in bb], "conf": float(o.get("confidence") or 0)})
+                          "bbox": bb, "conf": float(o.get("confidence") or 0)})
     return pr
 
 
@@ -161,10 +172,19 @@ def main():
     ap.add_argument("--loc", required=True)
     ap.add_argument("--pred", action="append", help="추론 .json.gz (여러 번 지정 시 A/B 비교)")
     ap.add_argument("--iou", type=float, default=0.5, help="매칭 IoU 임계값(소형 객체는 0.3 권장)")
+    ap.add_argument("--roi", nargs=4, type=float, metavar=("X1", "Y1", "X2", "Y2"),
+                    help="이 픽셀 영역 안(박스 중심 기준)만 평가. GT가 일부 영역만 라벨된 경우 "
+                         "반드시 지정해야 한다 — 안 그러면 라벨 안 된 영역의 정상 검출이 FP로 잡힌다")
     args = ap.parse_args()
 
     set_iou(args.iou)
     meta, gt = load_gt(args.loc)
+    roi = tuple(args.roi) if args.roi else (tuple(meta["roi"]) if meta.get("roi") else None)
+    if roi:
+        for f in list(gt):
+            gt[f] = [b for b in gt[f] if in_roi(b["bbox"], roi)]
+            if not gt[f]:
+                del gt[f]
     frames = sorted(gt.keys())
     if not frames:
         sys.exit("GT 박스가 없습니다")
@@ -174,11 +194,12 @@ def main():
         sys.exit("비교할 예측 파일이 없습니다(--pred)")
 
     print(f"[{args.loc}] GT 프레임 {len(frames)} · 박스 {sum(len(gt[f]) for f in frames)} · "
-          f"트랙 {len({b['id'] for f in frames for b in gt[f]})}")
+          f"트랙 {len({b['id'] for f in frames for b in gt[f]})} · IoU {args.iou}"
+          + (f" · ROI {[int(v) for v in roi]}" if roi else " · ROI 전체"))
     print(f"{'예측':44s} {'AP50':>6s} {'P':>6s} {'R':>6s} {'MOTA':>7s} {'IDF1':>6s} {'IDSW':>5s} {'MT':>4s} {'ML':>4s}")
     rows = []
     for p in preds:
-        pr = load_pred(p, set(frames))
+        pr = load_pred(p, set(frames), roi)
         d = detection_metrics(gt, pr, frames)
         m = mot_metrics(gt, pr, frames)
         name = os.path.relpath(p, REPO).replace("\\", "/")

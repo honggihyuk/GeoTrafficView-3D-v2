@@ -24,7 +24,7 @@ from scipy.optimize import linear_sum_assignment
 
 class _Track:
     __slots__ = ("id", "x", "P", "hits", "age", "tsu", "last_obs", "last_obs_f",
-                 "obs_hist", "conf", "cls")
+                 "obs_hist", "conf", "cls", "lane")
 
     def __init__(self, tid, z, frame, dt, conf, cls):
         self.id = tid
@@ -38,16 +38,74 @@ class _Track:
         self.obs_hist = [(frame, np.array(z, float))]
         self.conf = conf
         self.cls = cls
+        self.lane = None                                    # (link_idx, s, d) — 차선망 있을 때만
 
-    # --- Kalman (등속 모델) ---
-    def predict(self, dt, q=1.0):
+    # --- Kalman (등속 모델 / 차로 구속 모델) ---
+    def predict(self, dt, q=1.0, graph=None, q_lat_ratio=0.1, coast_only=True):
+        """graph가 있고 이 트랙이 차로에 얹혀 있으면 **차로 곡선을 따라** 예측한다.
+
+        오블리크 CCTV에서 트랙이 끊기는 주된 이유는 가림이고, 등속 직선 예측은 커브·교차로에서
+        곧바로 도로 밖으로 벗어난다. 차로를 따라 coasting하면 재등장 위치가 맞아 재연관된다.
+        프로세스 잡음도 차로 프레임에서 준다 — 종방향은 크게(가감속), 횡방향은 작게
+        (차량은 옆으로 미끄러지지 않는다).
+
+        coast_only: **가림 구간에서만** 차로 구속을 건다(기본). 매 프레임 예측 위치를 차로
+        위로 옮기면 관측이 잘 들어오는 구간에서도 KF 추정을 덮어써 링크 오연관·d 지연 오차가
+        누적된다(실측: PANGYO_2에서 수명 중앙값 1.93s→1.80s로 오히려 나빠졌다).
+        """
         F = np.array([[1, 0, dt, 0], [0, 1, 0, dt], [0, 0, 1, 0], [0, 0, 0, 1]], float)
-        self.x = F @ self.x
         G = np.array([[0.5 * dt * dt, 0], [0, 0.5 * dt * dt], [dt, 0], [0, dt]], float)
-        self.P = F @ self.P @ F.T + G @ (q * np.eye(2)) @ G.T
+
+        on_lane = graph is not None and self.lane is not None
+        use_lane = on_lane and (self.tsu >= 1 or not coast_only)
+        tan = None
+        if on_lane:
+            li, s, d = self.lane
+            v = self.x[2:4]
+            sp = float(np.linalg.norm(v))
+            t0 = graph.tangent(li, s)
+            sgn = 1.0 if float(v @ t0) >= 0 else -1.0
+            li2, s2 = graph.advance(li, s, sgn * sp * dt, prefer_tan=t0 * sgn)
+            tan = graph.tangent(li2, s2)        # 잡음 이방성은 차로에 얹혀 있으면 항상 적용
+            self.lane = (li2, s2, d)
+            if use_lane:                        # 위치 덮어쓰기는 가림 구간에서만
+                self.x = np.concatenate([graph.to_xy(li2, s2, d), sgn * sp * tan])
+            else:
+                self.x = F @ self.x
+        else:
+            self.x = F @ self.x
+
+        if tan is not None:                                 # 차로 프레임 이방성 잡음
+            n = np.array([-tan[1], tan[0]])
+            R = np.stack([tan, n], axis=1)
+            Q2 = R @ np.diag([q, q * q_lat_ratio]) @ R.T
+        else:
+            Q2 = q * np.eye(2)
+        self.P = F @ self.P @ F.T + G @ Q2 @ G.T
         self.age += 1
         self.tsu += 1
         return self.x[:2]
+
+    def set_lane(self, graph, z, max_dist=20.0, k=4, off_penalty=6.0):
+        """관측 z를 차선망에 얹어 (link, s, d)를 갱신.
+
+        이전 차로에서 **도로를 따라 도달 가능한** 후보를 우선한다. 교차로에서 직진·좌회전
+        링크가 겹칠 때 이전 상태와 이어지는 쪽을 고르게 하는 장치다.
+        """
+        cands = graph.project(z, max_dist=max_dist, k=k)
+        if not cands:
+            return
+        prev = self.lane
+        best, bc = None, None
+        for li, s, d, _, _ in cands:
+            cost = abs(d)
+            if prev is not None:
+                rd = graph.route_distance((prev[0], prev[1]), (li, s), limit=150.0)
+                if not np.isfinite(rd):
+                    cost += off_penalty                     # 이어지지 않는 링크는 벌점
+            if bc is None or cost < bc:
+                best, bc = (li, s, d), cost
+        self.lane = best
 
     def update(self, z, frame, dt, conf, cls, R=None):
         """R: 측정 공분산(2x2). 투영 불확실성(이방성)을 그대로 반영."""
@@ -96,7 +154,12 @@ class BEVTracker:
 
     def __init__(self, dt=1 / 30, max_dist=15.0, max_age=30, min_hits=3,
                  high_thresh=0.5, low_thresh=0.1, ocm_weight=2.0, class_aware=True,
-                 mahalanobis=True, chi2_gate=9.21):
+                 mahalanobis=True, chi2_gate=9.21, lane_graph=None, q=1.0, q_lat_ratio=0.1,
+                 lane_coast_only=True):
+        self.graph = lane_graph           # LaneGraph or None — None이면 기존 등속 모델 그대로
+        self.q = q
+        self.q_lat_ratio = q_lat_ratio
+        self.lane_coast_only = lane_coast_only   # 차로 구속을 가림 구간에만 걸지 여부
         self.dt = dt
         self.mahalanobis = mahalanobis    # 투영 공분산 기반 정규화 거리(권장)
         self.chi2_gate = chi2_gate        # 2 DOF 카이제곱 99% = 9.21
@@ -163,9 +226,16 @@ class BEVTracker:
         ud = [j for j in range(len(dets)) if j not in md]
         return matches, ut, ud
 
+    def _touch(self, tr, det, frame):
+        """트랙 갱신 + 차로 상태 갱신을 한 곳에서."""
+        tr.update(det["pos"], frame, self.dt, det.get("conf", 1), det.get("cls"), det.get("cov"))
+        if self.graph is not None:
+            tr.set_lane(self.graph, det["pos"], max_dist=self.max_dist)
+
     def update(self, dets, frame):
         # 1) 예측
-        preds = [tr.predict(self.dt) for tr in self.tracks]
+        preds = [tr.predict(self.dt, q=self.q, graph=self.graph, q_lat_ratio=self.q_lat_ratio,
+                            coast_only=self.lane_coast_only) for tr in self.tracks]
         assigned = [None] * len(dets)
 
         hi = [j for j, d in enumerate(dets) if d.get("conf", 1.0) >= self.high]
@@ -177,7 +247,7 @@ class BEVTracker:
                                        [dets[j] for j in hi], [preds[i] for i in tr_idx])
         for a, b in m1:
             i, j = tr_idx[a], hi[b]
-            self.tracks[i].update(dets[j]["pos"], frame, self.dt, dets[j].get("conf", 1), dets[j].get("cls"), dets[j].get("cov"))
+            self._touch(self.tracks[i], dets[j], frame)
             assigned[j] = self.tracks[i].id
 
         # 3) 2단계: 남은 트랙 ↔ 저신뢰 검출 (ByteTrack 아이디어)
@@ -187,7 +257,7 @@ class BEVTracker:
                                          [dets[j] for j in lo], [preds[i] for i in rem])
             for a, b in m2:
                 i, j = rem[a], lo[b]
-                self.tracks[i].update(dets[j]["pos"], frame, self.dt, dets[j].get("conf", 1), dets[j].get("cls"), dets[j].get("cov"))
+                self._touch(self.tracks[i], dets[j], frame)
                 assigned[j] = self.tracks[i].id
             rem = [rem[a] for a in ut2]
 
@@ -199,13 +269,15 @@ class BEVTracker:
                                        [self.tracks[i].last_obs for i in rem])
             for a, b in m3:
                 i, j = rem[a], left_dets[b]
-                self.tracks[i].update(dets[j]["pos"], frame, self.dt, dets[j].get("conf", 1), dets[j].get("cls"), dets[j].get("cov"))
+                self._touch(self.tracks[i], dets[j], frame)
                 assigned[j] = self.tracks[i].id
 
         # 5) 신규 트랙(고신뢰 미할당 검출만)
         for j, d in enumerate(dets):
             if assigned[j] is None and d.get("conf", 1.0) >= self.high:
                 t = _Track(self._next, d["pos"], frame, self.dt, d.get("conf", 1), d.get("cls"))
+                if self.graph is not None:
+                    t.set_lane(self.graph, d["pos"], max_dist=self.max_dist)
                 self._next += 1
                 self.tracks.append(t)
                 assigned[j] = t.id

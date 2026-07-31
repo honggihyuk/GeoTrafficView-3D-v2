@@ -1,5 +1,195 @@
 configs:
 
+  # ── 국내 CCTV 도메인 (AI Hub 164 고속도로) ───────────────────────────────
+  # kr_cctv       : 목표 프로파일. AI Hub 164 파인튜닝 가중치 + measurements_kr.
+  # kr_cctv_base  : 지금 즉시 실행 가능. 스톡 YOLO26s(COCO) — 데이터 승인 대기 중
+  #                 YOLO26 전환 회귀 검증용(NMS-free 헤드 / ByteTrack 연동 확인).
+  #
+  # YOLO26 NMS-free 주의: end-to-end one-to-one 헤드에서는 iou·agnostic_nms가
+  # 무력화되고 max_det 동작이 달라질 수 있음. 아래 값은 YOLO11 기준으로 남겨둔
+  # 것이며 밀집 장면(max_det 600)에서 실측 검증 필요. SAHI 슬라이스 간 병합은
+  # 모델 밖 후처리라 영향 없음.
+
+  kr_cctv:
+    prior_dimensions: "measurements_kr"
+
+    frames:
+      fps: 30
+      max_frame: -1
+
+    model:
+      weights: "./models/yolo26s-krcctv-ft.pt"
+      device: "0"
+      verbose: false
+      imgsz: 960
+      conf: 0.35
+      iou: 0.5
+      max_det: 600
+      agnostic_nms: false
+      half: true
+
+    tracking:
+      tracker_type: "bytetrack"
+      persist: true
+      track_high_thresh: 0.25
+      track_low_thresh: 0.1
+      new_track_thresh: 0.25
+      match_thresh: 0.8
+      track_buffer: 30
+      fuse_score: true
+
+    kinematics:
+      displacement_threshold: 0.25
+
+      heading_sampling_rate: 15
+      heading_smoothing: "adaptive_ema"
+
+      heading_ema:
+        alpha_min: 0.05
+        alpha_max: 0.4
+        speed_ref: 3.0
+
+      heading_min_speed_for_update: 0.1
+      heading_max_jump: 5
+      heading_recovery_frames: 10
+
+      heading_cosine_weighting: true
+      heading_cosine_min_angle: 10
+      heading_cosine_max_angle: 30
+
+      heading_sat_coords_weighting: true
+      heading_sat_coords_jitter_radius: 0.5
+      heading_sat_coords_jitter_frames: 8
+
+      heading_freeze_on_lost: true
+      heading_freeze_max_lost: 15
+
+      speed_smoothing: "ema"
+      speed_ema_alpha: 0.4
+
+
+  # kr_cctv_v2 — trailer 분리(4종: car/truck/trailer/bus).
+  # 선행조건: AI Hub 165 승인. 164 단독으로는 trailer가 학습되지 않는다
+  #          (164는 트레일러를 truck으로 라벨 → Stage A에서 배운 trailer를 지운다).
+  #          datasets/class_map_kr.yaml 의 trailer_prerequisite 참조.
+  kr_cctv_v2:
+    prior_dimensions: "measurements_kr_v2"
+
+    frames:
+      fps: 30
+      max_frame: -1
+
+    model:
+      weights: "./models/yolo26s-krcctv-v2-ft.pt"
+      device: "0"
+      verbose: false
+      imgsz: 960
+      conf: 0.35
+      iou: 0.5
+      max_det: 600
+      agnostic_nms: false
+      half: true
+
+    tracking:
+      tracker_type: "bytetrack"
+      persist: true
+      track_high_thresh: 0.25
+      track_low_thresh: 0.1
+      new_track_thresh: 0.25
+      match_thresh: 0.8
+      track_buffer: 30
+      fuse_score: true
+
+    kinematics:
+      displacement_threshold: 0.25
+
+      heading_sampling_rate: 15
+      heading_smoothing: "adaptive_ema"
+
+      heading_ema:
+        alpha_min: 0.05
+        alpha_max: 0.4
+        speed_ref: 3.0
+
+      heading_min_speed_for_update: 0.1
+      heading_max_jump: 5
+      heading_recovery_frames: 10
+
+      heading_cosine_weighting: true
+      heading_cosine_min_angle: 10
+      heading_cosine_max_angle: 30
+
+      heading_sat_coords_weighting: true
+      heading_sat_coords_jitter_radius: 0.5
+      heading_sat_coords_jitter_frames: 8
+
+      heading_freeze_on_lost: true
+      heading_freeze_max_lost: 15
+
+      speed_smoothing: "ema"
+      speed_ema_alpha: 0.4
+
+
+  kr_cctv_base:
+    prior_dimensions: "measurements_coco"
+
+    frames:
+      fps: 30
+      max_frame: 450
+
+    model:
+      weights: "yolo26s.pt"
+      device: "0"
+      verbose: false
+      imgsz: 960
+      conf: 0.35
+      iou: 0.5
+      max_det: 600
+      agnostic_nms: false
+      half: true
+
+    tracking:
+      tracker_type: "bytetrack"
+      persist: true
+      track_high_thresh: 0.25
+      track_low_thresh: 0.1
+      new_track_thresh: 0.25
+      match_thresh: 0.8
+      track_buffer: 30
+      fuse_score: true
+
+    kinematics:
+      displacement_threshold: 0.25
+
+      heading_sampling_rate: 15
+      heading_smoothing: "adaptive_ema"
+
+      heading_ema:
+        alpha_min: 0.05
+        alpha_max: 0.4
+        speed_ref: 3.0
+
+      heading_min_speed_for_update: 0.1
+      heading_max_jump: 5
+      heading_recovery_frames: 10
+
+      heading_cosine_weighting: true
+      heading_cosine_min_angle: 10
+      heading_cosine_max_angle: 30
+
+      heading_sat_coords_weighting: true
+      heading_sat_coords_jitter_radius: 0.5
+      heading_sat_coords_jitter_frames: 8
+
+      heading_freeze_on_lost: true
+      heading_freeze_max_lost: 15
+
+      speed_smoothing: "ema"
+      speed_ema_alpha: 0.4
+
+
+  # ── 레거시(VisDrone) — 재현성 보존용. 신규 학습 믹스에서는 제외(§오염 참조) ──
+
   mild_smoothing:
     prior_dimensions: "measurements_visdrone"
 
